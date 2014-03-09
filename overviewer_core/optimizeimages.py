@@ -23,7 +23,7 @@ advdef = "advdef"
 
 def check_programs(level):
     path = os.environ.get("PATH").split(os.pathsep)
-    
+
     def exists_in_path(prog):
         result = filter(lambda x: os.path.exists(os.path.join(x, prog)), path)
         return len(result) != 0

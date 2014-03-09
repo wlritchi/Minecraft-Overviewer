@@ -180,7 +180,7 @@ def validateStr(s):
 
 def validateDimension(d):
     # returns (original, argument to get_type)
-    
+
     # these are provided as arguments to RegionSet.get_type()
     pretty_names = {
         "nether": "DIM-1",
@@ -188,7 +188,7 @@ def validateDimension(d):
         "end": "DIM1",
         "default": 0,
     }
-    
+
     try:
         return (d, pretty_names[d])
     except KeyError:

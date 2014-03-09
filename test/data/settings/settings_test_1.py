@@ -1,6 +1,6 @@
 worlds['test'] = "test/data/settings/test_world"
 
-renders["myworld"] = { 
+renders["myworld"] = {
     "title": "myworld title",
     "world": "test",
     "rendermode": normal,

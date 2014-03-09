@@ -48,7 +48,7 @@ def replaceBads(s):
 def parseBucketChunks((bucket, rset)):
     pid = multiprocessing.current_process().pid
     pois = dict(TileEntities=[], Entities=[]);
-  
+
     i = 0
     cnt = 0
     l = len(bucket)
@@ -87,29 +87,29 @@ def handleEntities(rset, outputdir, render, rname, config):
     if numbuckets == 1:
         for (x,z,mtime) in rset.iterate_chunks():
             try:
-                data = rset.get_chunk(x,z) 
+                data = rset.get_chunk(x,z)
                 rset._pois['TileEntities'] += data['TileEntities']
                 rset._pois['Entities']     += data['Entities']
             except nbt.CorruptChunkError:
                 logging.warning("Ignoring POIs in corrupt chunk %d,%d", x,z)
-  
+
     else:
         buckets = [[] for i in range(numbuckets)];
-  
+
         for (x,z,mtime) in rset.iterate_chunks():
             i = x / 32 + z / 32
-            i = i % numbuckets 
+            i = i % numbuckets
             buckets[i].append([x,z])
-  
+
         for b in buckets:
             logging.info("Buckets has %d entries", len(b));
-  
+
         # Create a pool of processes and run all the functions
         pool = Pool(processes=numbuckets)
         results = pool.map(parseBucketChunks, ((buck, rset) for buck in buckets))
-  
+
         logging.info("All the threads completed")
-  
+
         # Fix up all the quests in the reset
         for data in results:
             rset._pois['TileEntities'] += data['TileEntities']
@@ -189,7 +189,7 @@ def handlePlayers(rset, render, worldpath):
 def handleManual(rset, manualpois):
     if not hasattr(rset, "_pois"):
         rset._pois = dict(TileEntities=[], Entities=[])
-    
+
     rset._pois['Manual'] = []
 
     if manualpois:
@@ -244,25 +244,25 @@ def main():
             return 1
         render['worldname_orig'] = render['world']
         render['world'] = worldpath
-        
+
         # find or create the world object
         if (render['world'] not in worldcache):
             w = world.World(render['world'])
             worldcache[render['world']] = w
         else:
             w = worldcache[render['world']]
-        
+
         rset = w.get_regionset(render['dimension'][1])
         if rset == None: # indicates no such dimension was found:
             logging.error("Sorry, you requested dimension '%s' for the render '%s', but I couldn't find it", render['dimension'][0], rname)
             return 1
-      
+
         for f in render['markers']:
             markersets.add(((f['name'], f['filterFunction']), rset))
             name = replaceBads(f['name']) + hex(hash(f['filterFunction']))[-4:] + "_" + hex(hash(rset))[-4:]
-            to_append = dict(groupName=name, 
-                    displayName = f['name'], 
-                    icon=f.get('icon', 'signpost_icon.png'), 
+            to_append = dict(groupName=name,
+                    displayName = f['name'],
+                    icon=f.get('icon', 'signpost_icon.png'),
                     createInfoWindow=f.get('createInfoWindow',True),
                     checked = f.get('checked', False))
             try:
@@ -270,7 +270,7 @@ def main():
                 l.append(to_append)
             except KeyError:
                 markers[rname] = [to_append]
-        
+
         if not options.skipscan:
             handleEntities(rset, os.path.join(destdir, rname), render, rname, config)
 

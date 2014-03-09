@@ -175,7 +175,7 @@ class TileSet(object):
 
         options is a dictionary of configuration parameters (strings mapping to
         values) that are interpreted by the rendering engine.
-        
+
         worldobj is the World object that regionsetobj is from.
 
         regionsetobj is the RegionSet object that is used to render the tiles.
@@ -535,7 +535,7 @@ class TileSet(object):
         def bgcolorformat(color):
             return "#%02x%02x%02x" % color[0:3]
         isOverlay = self.options.get("overlay") or (not any(isinstance(x, rendermodes.Base) for x in self.options.get("rendermode")))
-        
+
         d = dict(name = self.options.get('title'),
                 zoomLevels = self.treedepth,
                 defaultZoom = self.options.get('defaultzoom'),
@@ -884,7 +884,7 @@ class TileSet(object):
 
         # Create the actual image now
         img = Image.new("RGBA", (384, 384), self.options['bgcolor'])
-		
+
         # we'll use paste (NOT alpha_over) for quadtree generation because
         # this is just straight image stitching, not alpha blending
 
@@ -1060,7 +1060,7 @@ class TileSet(object):
                 if e.errno != errno.ENOENT:
                     raise
                 tile_mtime = 0
-            
+
             try:
                 max_chunk_mtime = max(c[5] for c in get_chunks_by_tile(tileobj, self.regionset))
             except ValueError:
