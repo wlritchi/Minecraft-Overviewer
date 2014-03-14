@@ -56,9 +56,10 @@ def iter_player_pois(rset, worldpath):
     "Iterates over the players in the given regionset."
     dimension = None
     try:
-        dimension = {None: 0,
-                     'DIM-1': -1,
-                     'DIM1': 1}[rset.get_type()]
+        dimension = { None      : 0
+                    , 'DIM-1'   : -1
+                    , 'DIM1'    : 1
+                    }[rset.get_type()]
     except KeyError, e:
         mystdim = re.match(r"^DIM_MYST(\d+)$", e.message)  # Dirty hack. Woo!
         if mystdim:
@@ -91,11 +92,12 @@ def iter_player_pois(rset, worldpath):
         playername = playerfile.split(".")[0]
         if useUUIDs:
             try:
-                profile = json.loads(urllib2.urlopen(UUID_LOOKUP_URL + playername.replace('-','')).read())
+                lookup_url = UUID_LOOKUP_URL + playername.replace('-','')
+                profile = json.loads(urllib2.urlopen(lookup_url).read())
                 if 'name' in profile:
                     playername = profile['name']
             except ValueError:
-                logging.warning("Unable to get player name for UUID %s", playername)
+                logging.warning("Unable to get name for UUID %s", playername)
         if isSinglePlayer:
             playername = 'Player'
         if data['Dimension'] == dimension:
@@ -116,7 +118,6 @@ def iter_player_pois(rset, worldpath):
             yield spawn
 
 def main():
-
     if os.path.basename(sys.argv[0]) == """genPOI.py""":
         helptext = """genPOI.py
             %prog --config=<config file> [--quiet]"""
@@ -127,11 +128,24 @@ def main():
     logger.configure()
 
     parser = OptionParser(usage=helptext)
-    parser.add_option("-c", "--config", dest="config", action="store", help="Specify the config file to use.")
-    parser.add_option("--quiet", dest="quiet", action="count", help="Reduce logging output")
-    parser.add_option("--skip-scan", dest="skipscan", action="store_true", help="Skip scanning for entities when using GenPOI")
+    parser.add_option( "-c"
+                     , "--config"
+                     , dest   = "config"
+                     , action = "store"
+                     , help   = "Specify the config file to use."
+                     )
+    parser.add_option( "--quiet"
+                     , dest   = "quiet"
+                     , action = "count"
+                     , help   = "Reduce logging output"
+                     )
+    parser.add_option( "--skip-scan"
+                     , dest   = "skipscan"
+                     , action = "store_true"
+                     , help   = "Skip scanning for entities when using GenPOI"
+                     )
 
-    options, args = parser.parse_args()
+    (options, _) = parser.parse_args()
     if not options.config:
         parser.print_help()
         return
@@ -162,8 +176,11 @@ def main():
         try:
             worldpath = config['worlds'][render['world']]
         except KeyError:
-            logging.error("Render %s's world is '%s', but I could not find a corresponding entry in the worlds dictionary.",
-                    rname, render['world'])
+            logging.error( "Render %s's world is '%s', but I could not find a "
+                         + "corresponding entry in the worlds dictionary."
+                         , rname
+                         , render['world']
+                         )
             return 1
         render['worldname_orig'] = render['world']
         render['world'] = worldpath
@@ -231,11 +248,11 @@ def main():
     with open(os.path.join(destdir, "markersDB.js"), "w") as output:
         output.write("var markersDB=")
         json.dump(marker_db, output, indent=2)
-        output.write(";\n");
+        output.write(";\n")
     with open(os.path.join(destdir, "markers.js"), "w") as output:
         output.write("var markers=")
         json.dump(markers, output, indent=2)
-        output.write(";\n");
+        output.write(";\n")
     with open(os.path.join(destdir, "baseMarkers.js"), "w") as output:
         output.write("overviewer.util.injectMarkerScript('markersDB.js');\n")
         output.write("overviewer.util.injectMarkerScript('markers.js');\n")
@@ -254,7 +271,7 @@ def handle_poi_result(poi, filter_result):
             d['text'] = d['hovertext'] = filter_result
         elif type(filter_result) == tuple:
             (d['hovertext'], d['text']) = filter_result
-        # Dict support to allow more flexible things in the future as well as polylines on the map.
+        # Dict support to allow more flexible things in the future, polylines, etc.
         elif type(filter_result) == dict:
             d['text'] = filter_result['text']
             # Use custom hovertext if provided...
@@ -262,12 +279,13 @@ def handle_poi_result(poi, filter_result):
                 d['hovertext'] = filter_result['hovertext']
             else: # ...otherwise default to display text.
                 d['hovertext'] = filter_result['text']
-            if 'polyline' in filter_result and type(filter_result['polyline']) == tuple:  #if type(result.get('polyline', '')) == tuple:
-                d['polyline'] = []
-                for point in filter_result['polyline']:
-                    # This poor man's validation code almost definately needs improving.
-                    if type(point) == dict:
-                        d['polyline'].append(dict(x=point['x'],y=point['y'],z=point['z']))
+            if 'polyline' in filter_result and type(filter_result['polyline']) == tuple:
+                d['polyline'] = [ { 'x' : point['x']
+                                  , 'y' : point['y']
+                                  , 'z' : point['z']
+                                  }
+                                    for point in filter_result['polyline']
+                                ]
                 if isinstance(filter_result['color'], basestring):
                     d['strokeColor'] = filter_result['color']
         if 'icon' in filter_result:
