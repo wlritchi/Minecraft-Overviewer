@@ -20,12 +20,8 @@ import json
 import sys
 import re
 import urllib2
-import Queue
-import multiprocessing
 
 from itertools import chain
-from multiprocessing import Process
-from multiprocessing import Pool
 from optparse import OptionParser
 
 from overviewer_core import logger
@@ -34,96 +30,30 @@ from overviewer_core import configParser, world
 
 UUID_LOOKUP_URL = 'https://sessionserver.mojang.com/session/minecraft/profile/'
 
-def replaceBads(s):
-    "Replaces bad characters with good characters!"
-    bads = [" ", "(", ")"]
-    x=s
-    for bad in bads:
-        x = x.replace(bad,"_")
-    return x
+def get_internal_name(name, filt, rset):
+    "Generates a unique name for a markerset. Should not be user visible."
+    return sanitize(name) + hex(hash(filt))[-4:] + '_' + hex(hash(rset))[-4:]
 
-# yes there's a double parenthesis here
-# see below for when this is called, and why we do this
-# a smarter way would be functools.partial, but that's broken on python 2.6
-# when used with multiprocessing
-def parseBucketChunks((bucket, rset)):
-    pid = multiprocessing.current_process().pid
-    pois = dict(Entities=[]);
+def sanitize(name):
+    "Replaces bad characters with good characters."
+    for char in [' ', '(', ')']:
+        name = name.replace(char, '_')
+    return name
 
-    i = 0
-    cnt = 0
-    l = len(bucket)
-    for b in bucket:
+def iter_entities(rset):
+    "Iterates over the entities and tile entities in the given regionset."
+    for (x, z, _) in rset.iterate_chunks():
+        data = rset.get_chunk(x, z)
         try:
-            data = rset.get_chunk(b[0],b[1])
-            pois['Entities'] += data['TileEntities']
-            pois['Entities'] += data['Entities']
+            for d in data['TileEntities']:
+                yield d
+            for d in data['Entities']:
+                yield d
         except nbt.CorruptChunkError:
-            logging.warning("Ignoring POIs in corrupt chunk %d,%d", b[0], b[1])
+            logging.warning("Ignoring POIs in corrupt chunk %d,%d", x, z)
 
-        # Perhaps only on verbose ?
-        i = i + 1
-        if i == 250:
-            i = 0
-            cnt = 250 + cnt
-            logging.info("Found %d entities and tile entities in thread %d so far at %d chunks", len(pois['Entities']), pid, cnt);
-
-    return pois
-
-def handleEntities(rset, outputdir, render, rname, config):
-
-    # if we're already handled the POIs for this region regionset, do nothing
-    if hasattr(rset, "_pois"):
-        return
-
-    logging.info("Looking for entities in %r", rset)
-
-    filters = render['markers']
-    rset._pois = dict(Entities=[])
-
-    numbuckets = config['processes'];
-    if numbuckets < 0:
-        numbuckets = multiprocessing.cpu_count()
-
-    if numbuckets == 1:
-        for (x,z,mtime) in rset.iterate_chunks():
-            try:
-                data = rset.get_chunk(x,z)
-                rset._pois['Entities'] += data['TileEntities']
-                rset._pois['Entities'] += data['Entities']
-            except nbt.CorruptChunkError:
-                logging.warning("Ignoring POIs in corrupt chunk %d,%d", x,z)
-
-    else:
-        buckets = [[] for i in range(numbuckets)];
-
-        for (x,z,mtime) in rset.iterate_chunks():
-            i = x / 32 + z / 32
-            i = i % numbuckets
-            buckets[i].append([x,z])
-
-        for b in buckets:
-            logging.info("Buckets has %d entries", len(b));
-
-        # Create a pool of processes and run all the functions
-        pool = Pool(processes=numbuckets)
-        results = pool.map(parseBucketChunks, ((buck, rset) for buck in buckets))
-
-        logging.info("All the threads completed")
-
-        # Fix up all the quests in the reset
-        for data in results:
-            rset._pois['Entities'] += data['Entities']
-
-    logging.info("Done.")
-
-def handlePlayers(rset, render, worldpath):
-    if not hasattr(rset, "_pois"):
-        rset._pois = dict(Entities=[])
-
-    # only handle this region set once
-    if 'Players' in rset._pois:
-        return
+def iter_player_pois(rset, worldpath):
+    "Iterates over the players in the given regionset."
     dimension = None
     try:
         dimension = {None: 0,
@@ -150,7 +80,6 @@ def handlePlayers(rset, render, worldpath):
         playerfiles = [os.path.join(worldpath, "level.dat")]
         isSinglePlayer = True
 
-    rset._pois['Players'] = []
     for playerfile in playerfiles:
         try:
             data = nbt.load(os.path.join(playerdir, playerfile))[1]
@@ -176,7 +105,7 @@ def handlePlayers(rset, render, worldpath):
             data['x'] = int(data['Pos'][0])
             data['y'] = int(data['Pos'][1])
             data['z'] = int(data['Pos'][2])
-            rset._pois['Players'].append(data)
+            yield data
         if "SpawnX" in data and dimension == 0:
             # Spawn position (bed or main spawn)
             spawn = {"id": "PlayerSpawn",
@@ -184,7 +113,7 @@ def handlePlayers(rset, render, worldpath):
                      "x": data['SpawnX'],
                      "y": data['SpawnY'],
                      "z": data['SpawnZ']}
-            rset._pois['Players'].append(spawn)
+            yield spawn
 
 def main():
 
@@ -224,6 +153,7 @@ def main():
     worldcache = {}
 
     markersets_by_rset = {}
+    worldpaths = {}
 
     marker_db = {}
     markers = {}
@@ -247,14 +177,17 @@ def main():
 
         rset = w.get_regionset(render['dimension'][1])
         if rset == None: # indicates no such dimension was found:
-            logging.error("Sorry, you requested dimension '%s' for the render '%s', but I couldn't find it", render['dimension'][0], rname)
+            logging.error( "Sorry, you requested dimension '%s' for the render "
+                         + "'%s', but I couldn't find it"
+                         , render['dimension'][0]
+                         , rname
+                         )
             return 1
 
         markers[rname] = []
         for f in render['markers']:
-            # generate a unique name for this markerset.  it will not be user visible
             filter_function = f['filterFunction']
-            internal_name = replaceBads(f['name']) + hex(hash(filter_function))[-4:] + "_" + hex(hash(rset))[-4:]
+            internal_name = get_internal_name(f['name'], filter_function, rset)
             markers[rname].append({
                 'groupName'         : internal_name,
                 'displayName'       : f['name'],
@@ -272,21 +205,28 @@ def main():
             }
             if rset not in markersets_by_rset:
                 markersets_by_rset[rset] = []
+                worldpaths[rset] = worldpath
             markersets_by_rset[rset].append((internal_name, filter_function))
 
+    for (regionset, markersets) in markersets_by_rset.iteritems():
+        pois = iter_player_pois(regionset, worldpaths[rset])
         if not options.skipscan:
-            handleEntities(rset, os.path.join(destdir, rname), render, rname, config)
+            pois = chain(iter_entities(regionset), pois)
 
-        handlePlayers(rset, render, worldpath)
-
-    logging.info("Done handling POIs")
-    logging.info("Writing out javascript files")
-    for regionset, markersets in markersets_by_rset.iteritems():
-        for poi in chain(regionset._pois['Entities'], regionset._pois['Players']):
+        count = 0
+        freq = 100
+        for poi in pois:
             for (internal_name, filter_function) in markersets:
                 poi_result = handle_poi_result(poi, filter_function(poi))
                 if poi_result is not None:
                     marker_db[internal_name]['raw'].append(poi_result)
+
+            # report 100, 200, ..., 1000, 2000, ..., 10000, 20000, ...
+            count += 1
+            if count % freq == 0:
+                logging.info("Processed %d POIs so far in regionset.", count)
+            if count == freq * 10:
+                freq = count
 
     with open(os.path.join(destdir, "markersDB.js"), "w") as output:
         output.write("var markersDB=")
@@ -303,6 +243,7 @@ def main():
     logging.info("Done")
 
 def handle_poi_result(poi, filter_result):
+    "Processes POIs and filter outputs into the markersDB format."
     if filter_result:
         d = {
             'x' : poi['x'] if 'x' in poi else poi['Pos'][0],
@@ -329,7 +270,9 @@ def handle_poi_result(poi, filter_result):
                         d['polyline'].append(dict(x=point['x'],y=point['y'],z=point['z']))
                 if isinstance(filter_result['color'], basestring):
                     d['strokeColor'] = filter_result['color']
-        if 'icon' in poi:
+        if 'icon' in filter_result:
+            d['icon'] = filter_result['icon']
+        elif 'icon' in poi:
             d['icon'] = poi['icon']
         if 'createInfoWindow' in poi:
             d['createInfoWindow'] = poi['createInfoWindow']
